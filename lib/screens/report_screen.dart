@@ -1,7 +1,8 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../main.dart';
+import '../services/api_service.dart';
 
 class ReportScreen extends StatefulWidget {
   const ReportScreen({super.key});
@@ -11,10 +12,11 @@ class ReportScreen extends StatefulWidget {
 }
 
 class _ReportScreenState extends State<ReportScreen> {
-  final descriptionController = TextEditingController();
-  File? _selectedImage;
-  final ImagePicker _picker = ImagePicker();
-  String? _selectedType;
+  final _descriptionController = TextEditingController();
+  Uint8List? _imageBytes;
+  String?    _imageName;
+  String?    _selectedType;
+  bool       _isSubmitting = false;
 
   final List<String> _pollutionTypes = [
     'Fumée industrielle',
@@ -24,27 +26,55 @@ class _ReportScreenState extends State<ReportScreen> {
     'Autre',
   ];
 
-  Future<void> pickImageFromGallery() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) setState(() => _selectedImage = File(image.path));
+  Future<void> _pickImage(ImageSource source) async {
+    final XFile? image = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 1200,
+      maxHeight: 1200,
+      imageQuality: 85,
+    );
+    if (image != null) {
+      final bytes = await image.readAsBytes();
+      setState(() {
+        _imageBytes = bytes;
+        _imageName  = image.name;
+      });
+    }
   }
 
-  Future<void> pickImageFromCamera() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.camera);
-    if (image != null) setState(() => _selectedImage = File(image.path));
-  }
-
-  void submitReport() {
-    if (_selectedImage == null) {
+  Future<void> _submit() async {
+    if (_selectedType == null) {
+      _showSnack("Veuillez choisir un type de pollution", AppTheme.warning);
+      return;
+    }
+    if (_imageBytes == null) {
       _showSnack("Veuillez sélectionner une photo", AppTheme.warning);
       return;
     }
-    _showSnack("Signalement envoyé avec succès ✓", AppTheme.mint);
-    setState(() {
-      _selectedImage = null;
-      _selectedType = null;
-    });
-    descriptionController.clear();
+
+    setState(() => _isSubmitting = true);
+
+    // Appelle POST /report/image (avec photo) ou POST /report (sans)
+    final result = await ApiService.submitReport(
+      reportType:  _selectedType!,
+      description: _descriptionController.text.trim(),
+      imageBytes:  _imageBytes,
+      imageName:   _imageName,
+    );
+
+    setState(() => _isSubmitting = false);
+
+    if (result != null) {
+      _showSnack("✓ Signalement envoyé — les citoyens sont prévenus !", AppTheme.mint);
+      setState(() {
+        _imageBytes   = null;
+        _imageName    = null;
+        _selectedType = null;
+      });
+      _descriptionController.clear();
+    } else {
+      _showSnack("Erreur lors de l'envoi. Vérifiez votre connexion.", AppTheme.danger);
+    }
   }
 
   void _showSnack(String msg, Color color) {
@@ -58,7 +88,7 @@ class _ReportScreenState extends State<ReportScreen> {
 
   @override
   void dispose() {
-    descriptionController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -74,15 +104,13 @@ class _ReportScreenState extends State<ReportScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Image section
+                  // Photo
                   _buildImageSection(),
                   const SizedBox(height: 20),
 
-                  // Pollution type
-                  const Text(
-                    'Type de pollution',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.textDark),
-                  ),
+                  // Type
+                  const Text('Type de pollution',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.textDark)),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8, runSpacing: 8,
@@ -96,39 +124,61 @@ class _ReportScreenState extends State<ReportScreen> {
 
                   // Description
                   TextField(
-                    controller: descriptionController,
+                    controller: _descriptionController,
                     maxLines: 4,
                     decoration: const InputDecoration(
                       labelText: 'Description',
-                      hintText: 'Ex : fumée noire près de l\'usine, eau suspecte…',
+                      hintText: "Ex : fumée noire près de l'usine, eau suspecte…",
                       alignLabelWithHint: true,
                     ),
                   ),
                   const SizedBox(height: 24),
 
-                  // Submit
+                  // Bouton envoyer
                   Container(
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppTheme.teal, AppTheme.skyBlue],
-                      ),
+                      gradient: const LinearGradient(colors: [AppTheme.teal, AppTheme.skyBlue]),
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(color: AppTheme.teal.withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 6)),
-                      ],
+                      boxShadow: [BoxShadow(color: AppTheme.teal.withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: ElevatedButton.icon(
-                      onPressed: submitReport,
+                      onPressed: _isSubmitting ? null : _submit,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.transparent,
                         shadowColor: Colors.transparent,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
-                      icon: const Icon(Icons.send_rounded, color: Colors.white),
-                      label: const Text(
-                        'Envoyer le signalement',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                      icon: _isSubmitting
+                          ? const SizedBox(width: 20, height: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Icon(Icons.send_rounded, color: Colors.white),
+                      label: Text(
+                        _isSubmitting ? 'Envoi en cours…' : 'Envoyer le signalement',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Info
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppTheme.paleTeal,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.teal.withOpacity(0.2)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline_rounded, color: AppTheme.teal, size: 18),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Votre signalement sera visible par tous les citoyens de Gabès.',
+                            style: TextStyle(fontSize: 12, color: AppTheme.teal),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -160,10 +210,8 @@ class _ReportScreenState extends State<ReportScreen> {
                 icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                 onPressed: () => Navigator.pop(context),
               ),
-              const Text(
-                'Signaler une pollution',
-                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-              ),
+              const Text('Signaler une pollution',
+                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
             ],
           ),
         ),
@@ -175,21 +223,20 @@ class _ReportScreenState extends State<ReportScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Photo du problème',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.textDark),
-        ),
+        const Text('Photo du problème',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.textDark)),
         const SizedBox(height: 10),
+
         ClipRRect(
           borderRadius: BorderRadius.circular(18),
-          child: _selectedImage != null
+          child: _imageBytes != null
               ? Stack(
                   children: [
-                    Image.file(_selectedImage!, height: 200, width: double.infinity, fit: BoxFit.cover),
+                    Image.memory(_imageBytes!, height: 200, width: double.infinity, fit: BoxFit.cover),
                     Positioned(
                       top: 8, right: 8,
                       child: GestureDetector(
-                        onTap: () => setState(() => _selectedImage = null),
+                        onTap: () => setState(() { _imageBytes = null; _imageName = null; }),
                         child: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
@@ -197,11 +244,20 @@ class _ReportScreenState extends State<ReportScreen> {
                         ),
                       ),
                     ),
+                    Positioned(
+                      bottom: 0, left: 0, right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        color: Colors.black38,
+                        child: Text(_imageName ?? '',
+                            style: const TextStyle(color: Colors.white, fontSize: 11),
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                    ),
                   ],
                 )
               : Container(
-                  height: 200,
-                  width: double.infinity,
+                  height: 200, width: double.infinity,
                   decoration: BoxDecoration(
                     color: AppTheme.paleTeal,
                     borderRadius: BorderRadius.circular(18),
@@ -213,29 +269,18 @@ class _ReportScreenState extends State<ReportScreen> {
                       Icon(Icons.add_photo_alternate_rounded, size: 44, color: AppTheme.teal.withOpacity(0.5)),
                       const SizedBox(height: 8),
                       Text('Aucune image sélectionnée',
-                        style: TextStyle(color: AppTheme.teal.withOpacity(0.7), fontSize: 14)),
+                          style: TextStyle(color: AppTheme.teal.withOpacity(0.7), fontSize: 14)),
                     ],
                   ),
                 ),
         ),
         const SizedBox(height: 12),
+
         Row(
           children: [
-            Expanded(
-              child: _PhotoButton(
-                icon: Icons.camera_alt_rounded,
-                label: 'Caméra',
-                onTap: pickImageFromCamera,
-              ),
-            ),
+            Expanded(child: _PhotoButton(icon: Icons.camera_alt_rounded,    label: 'Caméra',  onTap: () => _pickImage(ImageSource.camera))),
             const SizedBox(width: 12),
-            Expanded(
-              child: _PhotoButton(
-                icon: Icons.photo_library_rounded,
-                label: 'Galerie',
-                onTap: pickImageFromGallery,
-              ),
-            ),
+            Expanded(child: _PhotoButton(icon: Icons.photo_library_rounded, label: 'Galerie', onTap: () => _pickImage(ImageSource.gallery))),
           ],
         ),
       ],
@@ -243,10 +288,9 @@ class _ReportScreenState extends State<ReportScreen> {
   }
 }
 
+// ── Widgets ───────────────────────────────────────────────────────────────────
 class _PhotoButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
+  final IconData icon; final String label; final VoidCallback onTap;
   const _PhotoButton({required this.icon, required this.label, required this.onTap});
 
   @override
@@ -276,9 +320,7 @@ class _PhotoButton extends StatelessWidget {
 }
 
 class _TypeChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
+  final String label; final bool selected; final VoidCallback onTap;
   const _TypeChip({required this.label, required this.selected, required this.onTap});
 
   @override
@@ -291,16 +333,13 @@ class _TypeChip extends StatelessWidget {
         color: selected ? AppTheme.teal : Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: selected ? AppTheme.teal : AppTheme.teal.withOpacity(0.3)),
-        boxShadow: selected ? [BoxShadow(color: AppTheme.teal.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 3))] : [],
+        boxShadow: selected
+            ? [BoxShadow(color: AppTheme.teal.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 3))]
+            : [],
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          color: selected ? Colors.white : AppTheme.teal,
-        ),
-      ),
+      child: Text(label,
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500,
+              color: selected ? Colors.white : AppTheme.teal)),
     ),
   );
 }

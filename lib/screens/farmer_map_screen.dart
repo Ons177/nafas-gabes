@@ -193,6 +193,8 @@ class _FarmerMapScreenState extends State<FarmerMapScreen> {
     });
 
     try {
+      final now = DateTime.now();
+
       for (int i = 0; i < zones.length; i++) {
         final z = zones[i];
 
@@ -205,9 +207,11 @@ class _FarmerMapScreenState extends State<FarmerMapScreen> {
           windDirection: z.windDirection,
           distanceUsine: z.distanceUsine,
           facteurIndustriel: z.facteurIndustriel,
+          hour: now.hour,
+          month: now.month,
         );
 
-        if (result != null) {
+        if (result != null && result["pollution_score"] != null) {
           final score = (result["pollution_score"] as num).toDouble();
 
           String health;

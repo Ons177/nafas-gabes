@@ -49,7 +49,7 @@ class _FactoryDashboardScreenState extends State<FactoryDashboardScreen> {
 
     zones = [
       const _ExposureZone(
-        name: "Gabes Centre",
+        name: "Gabès Centre",
         position: LatLng(33.881, 10.090),
         populationLabel: "Zone urbaine dense",
         distanceLabel: "3.2 km",
@@ -84,6 +84,8 @@ class _FactoryDashboardScreenState extends State<FactoryDashboardScreen> {
     });
 
     try {
+      final now = DateTime.now();
+
       final result = await ApiService.predict(
         temperature: meteo["temperature"]!,
         humidity: meteo["humidity"]!,
@@ -93,27 +95,31 @@ class _FactoryDashboardScreenState extends State<FactoryDashboardScreen> {
         windDirection: meteo["windDirection"]!,
         distanceUsine: meteo["distanceUsine"]!,
         facteurIndustriel: meteo["facteurIndustriel"]!,
+        hour: now.hour,
+        month: now.month,
       );
 
-      if (result != null) {
+      if (result != null &&
+          result["pollution_score"] != null &&
+          result["risk_level"] != null) {
         setState(() {
           pollutionScore = (result["pollution_score"] as num).toDouble();
           riskLevel = (result["risk_level"] as String).toLowerCase();
         });
       } else {
         setState(() {
-          errorMessage = "Aucune réponse reçue depuis l'API.";
+          errorMessage = "Réponse invalide reçue depuis l'API.";
         });
       }
     } catch (e) {
       setState(() {
-        errorMessage = "Impossible de charger les données IA.";
+        errorMessage = "Impossible de charger les données IA : $e";
+      });
+    } finally {
+      setState(() {
+        isLoading = false;
       });
     }
-
-    setState(() {
-      isLoading = false;
-    });
   }
 
   Color get riskColor {
@@ -167,7 +173,7 @@ class _FactoryDashboardScreenState extends State<FactoryDashboardScreen> {
     }
 
     if ((gasSensors["SO2"] ?? 0) > 60) {
-      actions.add("Alerter le responsable HSE sur le niveau SO2.");
+      actions.add("Alerter le responsable HSE sur le niveau SO₂.");
     }
     if ((meteo["wind"] ?? 0) > 20) {
       actions.add("Surveiller les zones sous le vent autour de l’usine.");
@@ -183,8 +189,9 @@ class _FactoryDashboardScreenState extends State<FactoryDashboardScreen> {
   }
 
   String get impactedZone {
-    if ((meteo["windDirection"] ?? 0) >= 150 && (meteo["windDirection"] ?? 0) <= 210) {
-      return "Gabes Centre";
+    final dir = meteo["windDirection"] ?? 0;
+    if (dir >= 150 && dir <= 210) {
+      return "Gabès Centre";
     }
     return "Ghannouch";
   }
@@ -259,7 +266,8 @@ class _FactoryDashboardScreenState extends State<FactoryDashboardScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.16),
                   borderRadius: BorderRadius.circular(20),
@@ -289,7 +297,8 @@ class _FactoryDashboardScreenState extends State<FactoryDashboardScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: AppTheme.teal,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 ),
                 icon: const Icon(Icons.refresh_rounded, size: 18),
                 label: const Text("Actualiser"),
@@ -411,10 +420,10 @@ class _FactoryDashboardScreenState extends State<FactoryDashboardScreen> {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
+          const Text(
             "Visualisation des zones potentiellement impactées selon l’IA et le vent.",
             style: TextStyle(
-              color: AppTheme.textMid.withOpacity(0.9),
+              color: AppTheme.textMid,
               fontSize: 12,
             ),
           ),
@@ -431,7 +440,8 @@ class _FactoryDashboardScreenState extends State<FactoryDashboardScreen> {
                 ),
                 children: [
                   TileLayer(
-                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     userAgentPackageName: 'com.example.mobile_app',
                   ),
                   CircleLayer(
@@ -556,10 +566,26 @@ class _FactoryDashboardScreenState extends State<FactoryDashboardScreen> {
       icon: Icons.sensors_rounded,
       child: Column(
         children: [
-          _SensorRow("SO₂", "${gasSensors["SO2"]} ppb", gasSensors["SO2"]! > 60 ? AppTheme.danger : AppTheme.mint),
-          _SensorRow("NO₂", "${gasSensors["NO2"]} ppb", gasSensors["NO2"]! > 50 ? AppTheme.warning : AppTheme.mint),
-          _SensorRow("CO", "${gasSensors["CO"]} ppm", gasSensors["CO"]! > 2 ? AppTheme.warning : AppTheme.mint),
-          _SensorRow("H₂S", "${gasSensors["H2S"]} ppb", gasSensors["H2S"]! > 10 ? AppTheme.warning : AppTheme.mint),
+          _SensorRow(
+            "SO₂",
+            "${gasSensors["SO2"]} ppb",
+            gasSensors["SO2"]! > 60 ? AppTheme.danger : AppTheme.mint,
+          ),
+          _SensorRow(
+            "NO₂",
+            "${gasSensors["NO2"]} ppb",
+            gasSensors["NO2"]! > 50 ? AppTheme.warning : AppTheme.mint,
+          ),
+          _SensorRow(
+            "CO",
+            "${gasSensors["CO"]} ppm",
+            gasSensors["CO"]! > 2 ? AppTheme.warning : AppTheme.mint,
+          ),
+          _SensorRow(
+            "H₂S",
+            "${gasSensors["H2S"]} ppb",
+            gasSensors["H2S"]! > 10 ? AppTheme.warning : AppTheme.mint,
+          ),
         ],
       ),
     );
@@ -648,9 +674,7 @@ class _FactoryDashboardScreenState extends State<FactoryDashboardScreen> {
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: highlighted
-                  ? riskColor.withOpacity(0.08)
-                  : AppTheme.surface,
+              color: highlighted ? riskColor.withOpacity(0.08) : AppTheme.surface,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: highlighted

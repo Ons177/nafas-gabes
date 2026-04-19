@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'services/api_service.dart';
+import 'services/api_service.dart' as api;
 import 'screens/citizen_dashboard.dart';
 import 'screens/farmer_dashboard.dart';
 import 'screens/factory_dashboard_screen.dart';
@@ -165,6 +165,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
+
   bool isLoading = false;
   bool _obscure = true;
 
@@ -175,33 +176,43 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void handleLogin() async {
+  Future<void> handleLogin() async {
+    FocusScope.of(context).unfocus();
     setState(() => isLoading = true);
 
-    final result = await ApiService.login(
+    final result = await api.ApiService.login(
       emailController.text.trim(),
       passwordController.text.trim(),
     );
 
+    if (!mounted) return;
     setState(() => isLoading = false);
 
     if (result != null && result["user"] != null) {
-      final role = result["user"]["role"];
+      final role = (result["user"]["role"] ?? "").toString();
 
       if (role == "citizen") {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const CitizenDashboard()),
+          MaterialPageRoute(
+            builder: (_) => CitizenDashboard(
+              fullName: result["user"]["full_name"] ?? "Citoyen",
+            ),
+          ),
         );
       } else if (role == "farmer") {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const FarmerDashboard()),
+          MaterialPageRoute(
+            builder: (_) => FarmerDashboard(),
+          ),
         );
       } else if (role == "factory") {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const FactoryDashboardScreen()),
+          MaterialPageRoute(
+            builder: (_) => const FactoryDashboardScreen(),
+          ),
         );
       } else {
         _showSnack("Rôle non supporté : $role");
@@ -272,7 +283,6 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 children: [
                   const SizedBox(height: 48),
-
                   Container(
                     width: 110,
                     height: 110,
@@ -293,12 +303,19 @@ class _LoginScreenState extends State<LoginScreen> {
                         fit: BoxFit.cover,
                         width: 110,
                         height: 110,
+                        errorBuilder: (_, __, ___) {
+                          return const Center(
+                            child: Icon(
+                              Icons.eco,
+                              size: 42,
+                              color: AppTheme.teal,
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 48),
-
                   Container(
                     padding: const EdgeInsets.all(28),
                     decoration: BoxDecoration(
@@ -365,6 +382,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               },
                             ),
                           ),
+                          onSubmitted: (_) => handleLogin(),
                         ),
                         const SizedBox(height: 28),
                         isLoading

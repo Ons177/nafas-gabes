@@ -185,6 +185,8 @@ class _MapScreenState extends State<MapScreen> {
     });
 
     try {
+      final now = DateTime.now();
+
       for (int i = 0; i < zones.length; i++) {
         final z = zones[i];
 
@@ -197,9 +199,13 @@ class _MapScreenState extends State<MapScreen> {
           windDirection: z.windDirection,
           distanceUsine: z.distanceUsine,
           facteurIndustriel: z.facteurIndustriel,
+          hour: now.hour,
+          month: now.month,
         );
 
-        if (result != null) {
+        if (result != null &&
+            result["pollution_score"] != null &&
+            result["risk_level"] != null) {
           final score = (result["pollution_score"] as num).toDouble();
           final apiRisk = (result["risk_level"] as String).toLowerCase();
 
